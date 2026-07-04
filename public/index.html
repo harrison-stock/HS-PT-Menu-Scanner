@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0d0e">
+  <title>Menu Scanner — Harrison Stock Fitness</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <clipPath id="hs-hex-clip" clipPathUnits="objectBoundingBox">
+      <path transform="scale(0.00257069,0.00273973)" d="M194.489,30.721c-3.782,0 -7.574,0.799 -10.995,2.417l-141.142,66.762c-6.877,3.253 -11.356,9.426 -11.356,16.346l0,133.524c0,6.921 4.479,13.093 11.356,16.346l141.142,66.762c6.776,3.205 15.227,3.205 22.002,0l141.136,-66.762c6.876,-3.253 11.362,-9.424 11.362,-16.346l0,-133.524c0,-6.922 -4.486,-13.093 -11.362,-16.346l-141.136,-66.762c-3.418,-1.617 -7.23,-2.417 -11.007,-2.417Z"></path>
+    </clipPath>
+  </defs>
+</svg>
+
+<div id="app">
+
+  <!-- ═══════════ LANDING ═══════════ -->
+  <div class="screen" id="screen-landing" data-screen="landing">
+    <div class="landing-brand">
+      <img src="assets/logo-mark.png" alt="HS PT" width="92">
+      <div class="brandname">HS PT</div>
+      <div class="tagline">HARRISON STOCK | MENU SCANNER</div>
+    </div>
+    <div class="landing-headline">
+      <div class="heading heading-lg">WHAT SHOULD I<br>ACTUALLY ORDER?</div>
+      <div class="sub">Scan any menu. Honest picks for your goal. No guilt.</div>
+    </div>
+    <div class="steps">
+      <div class="step-row"><div class="step-hex hex">1</div><p>Quick profile — goal and dietary needs</p></div>
+      <div class="step-row"><div class="step-hex hex">2</div><p>Point your camera at the menu</p></div>
+      <div class="step-row"><div class="step-hex hex">3</div><p>Get picks in seconds</p></div>
+    </div>
+    <div class="landing-footer">
+      <button class="btn-primary" data-action="go-profile">GET STARTED</button>
+      <div class="built-by">Built by <a href="https://www.harrisonstock.co.uk" target="_blank" rel="noopener">Harrison Stock</a></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ PROFILE ═══════════ -->
+  <div class="screen" id="screen-profile" data-screen="profile">
+    <div style="margin-bottom:20px">
+      <div class="eyebrow">// STEP 1 OF 2</div>
+      <div class="heading">QUICK PROFILE</div>
+      <div class="subtext">Takes 30 seconds. Helps me give you better picks.</div>
+    </div>
+    <div class="err-banner" id="profile-error" hidden></div>
+    <div class="field">
+      <div>
+        <div class="field-label">FIRST NAME</div>
+        <input type="text" id="input-name" placeholder="e.g. Dave">
+      </div>
+      <div>
+        <div class="field-label">EMAIL</div>
+        <input type="email" id="input-email" placeholder="you@email.com">
+        <div class="field-hint">So Harrison can send you useful stuff. No spam.</div>
+      </div>
+      <div>
+        <div class="field-label">GOAL</div>
+        <div class="goal-row" id="profile-goal-row" data-target="profile"></div>
+      </div>
+      <div>
+        <div class="field-label">DAILY CALORIE TARGET <span style="opacity:.6">(OPTIONAL)</span></div>
+        <input type="number" id="input-cals" placeholder="e.g. 2000">
+        <div class="field-hint">Not sure? Leave it blank and we'll estimate.</div>
+      </div>
+      <div>
+        <div class="field-label">DIETARY RESTRICTIONS</div>
+        <div class="steps" style="flex-direction:row;flex-wrap:wrap;gap:7px" id="profile-chips" data-target="profile"></div>
+      </div>
+    </div>
+    <div class="footer-cta">
+      <button class="btn-primary" data-action="save-profile">SAVE + SCAN</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ SCANNER ═══════════ -->
+  <div class="screen" id="screen-scanner" data-screen="scanner">
+    <div class="top-row">
+      <div>
+        <div class="eyebrow">// MENU SCANNER</div>
+        <div style="font-size:11px;letter-spacing:0.08em;color:var(--text-2)">
+          <span id="scanner-name"></span> · <span id="scanner-goal"></span>
+        </div>
+      </div>
+      <button class="hex-btn" data-action="go-settings" aria-label="Settings">
+        <div class="avatar-hex hex" id="scanner-initials"></div>
+      </button>
+    </div>
+    <div style="margin-bottom:16px">
+      <div class="heading">SCAN A MENU</div>
+      <div class="subtext">Take a photo, upload a file, or type it in.</div>
+    </div>
+    <div class="err-banner" id="scanner-error" hidden></div>
+
+    <div class="attach-slot" id="photo-slot"></div>
+
+    <div class="or-divider">— OR —</div>
+
+    <div id="doc-slot"></div>
+
+    <div class="craving-line">Can't take a photo? Write down what you're craving.</div>
+    <div class="carousel-slot"><div class="eg" id="eg-line"></div></div>
+    <textarea id="input-menu-text" placeholder="Type menu items here..."></textarea>
+
+    <div class="footer-cta">
+      <button class="btn-primary" data-action="analyse">SUBMIT</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ COURSES ═══════════ -->
+  <div class="screen" id="screen-courses" data-screen="courses">
+    <div class="back-row">
+      <button class="hex-btn" data-action="back-to-scanner" aria-label="Back">
+        <div class="back-hex hex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg></div>
+      </button>
+      <div>
+        <div class="eyebrow">// MENU READ</div>
+        <div class="heading heading-sm">WHAT DO YOU NEED<br>HELP CHOOSING?</div>
+      </div>
+    </div>
+    <div class="courses-headrow">
+      <div class="copy">Pick the courses you want recommendations for.</div>
+      <button class="select-all-btn" id="select-all-btn" data-action="toggle-all-courses"></button>
+    </div>
+    <div class="err-banner" id="courses-error" hidden></div>
+    <div class="course-list" id="course-list"></div>
+    <div class="footer-cta">
+      <button class="btn-primary" data-action="get-recommendations">GET RECOMMENDATIONS</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ CHAINS ═══════════ -->
+  <div class="screen screen--flush" id="screen-chains" data-screen="chains">
+    <div class="chains-head">
+      <div class="back-row">
+        <button class="hex-btn" data-action="back-to-scanner" aria-label="Back">
+          <div class="back-hex hex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg></div>
+        </button>
+        <div>
+          <div class="eyebrow">// RESOURCE LIBRARY</div>
+          <div class="heading heading-sm">CHAIN MENUS</div>
+        </div>
+      </div>
+      <div class="search-bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+        <input type="search" id="chain-search" placeholder="Search chains...">
+      </div>
+      <div class="cat-scroll" id="chain-cats"></div>
+    </div>
+    <div class="chains-body">
+      <div class="chain-list" id="chain-list"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ ERROR ═══════════ -->
+  <div class="screen" id="screen-error" data-screen="error">
+    <div class="error-body">
+      <div class="error-hex-wrap">
+        <svg viewBox="0 0 389 365" width="132" height="124" style="overflow:visible">
+          <path d="M194.489,30.721c-3.782,0 -7.574,0.799 -10.995,2.417l-141.142,66.762c-6.877,3.253 -11.356,9.426 -11.356,16.346l0,133.524c0,6.921 4.479,13.093 11.356,16.346l141.142,66.762c6.776,3.205 15.227,3.205 22.002,0l141.136,-66.762c6.876,-3.253 11.362,-9.424 11.362,-16.346l0,-133.524c0,-6.922 -4.486,-13.093 -11.362,-16.346l-141.136,-66.762c-3.418,-1.617 -7.23,-2.417 -11.007,-2.417Z" fill="rgba(238,106,106,0.10)" stroke="var(--coral)" stroke-width="7" stroke-linejoin="round" style="filter:drop-shadow(0 0 14px rgba(238,106,106,0.4))"></path>
+        </svg>
+        <div style="position:absolute;inset:0;display:grid;place-items:center">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--coral)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v5"></path><circle cx="12" cy="16.5" r="0.4" fill="var(--coral)" stroke="none"></circle><circle cx="12" cy="16.5" r="1.1"></circle></svg>
+        </div>
+      </div>
+      <div>
+        <div class="error-title" id="error-title"></div>
+        <div class="error-msg" id="error-body"></div>
+      </div>
+      <div class="error-tips">
+        <div class="lbl">// TRY THIS</div>
+        <ul id="error-tips"></ul>
+      </div>
+    </div>
+    <div class="error-actions">
+      <button class="btn-primary" data-action="err-retry">TRY AGAIN</button>
+      <button class="btn-outline" data-action="err-type">TYPE THE MENU IN INSTEAD</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ LOADING ═══════════ -->
+  <div class="screen screen--flush" id="screen-loading" data-screen="loading">
+    <div class="loading-body">
+      <div class="loading-hex">
+        <svg viewBox="0 0 389 365" width="120" height="113" style="overflow:visible">
+          <path d="M194.489,30.721c-3.782,0 -7.574,0.799 -10.995,2.417l-141.142,66.762c-6.877,3.253 -11.356,9.426 -11.356,16.346l0,133.524c0,6.921 4.479,13.093 11.356,16.346l141.142,66.762c6.776,3.205 15.227,3.205 22.002,0l141.136,-66.762c6.876,-3.253 11.362,-9.424 11.362,-16.346l0,-133.524c0,-6.922 -4.486,-13.093 -11.362,-16.346l-141.136,-66.762c-3.418,-1.617 -7.23,-2.417 -11.007,-2.417Z" fill="none" stroke="var(--track)" stroke-width="14" stroke-linejoin="round"></path>
+          <path d="M194.489,30.721c-3.782,0 -7.574,0.799 -10.995,2.417l-141.142,66.762c-6.877,3.253 -11.356,9.426 -11.356,16.346l0,133.524c0,6.921 4.479,13.093 11.356,16.346l141.142,66.762c6.776,3.205 15.227,3.205 22.002,0l141.136,-66.762c6.876,-3.253 11.362,-9.424 11.362,-16.346l0,-133.524c0,-6.922 -4.486,-13.093 -11.362,-16.346l-141.136,-66.762c-3.418,-1.617 -7.23,-2.417 -11.007,-2.417Z" fill="none" stroke="var(--accent)" stroke-width="14" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="285 855" style="animation:hexdash 1.4s linear infinite;filter:drop-shadow(0 0 8px var(--accent-glow))"></path>
+        </svg>
+      </div>
+      <div class="loading-copy">
+        <div class="t1">READING YOUR MENU</div>
+        <div class="t2" id="loading-sub">CHECKING IT AGAINST YOUR GOAL…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ RESULTS ═══════════ -->
+  <div class="screen" id="screen-results" data-screen="results">
+    <div style="margin-bottom:16px">
+      <div class="eyebrow" id="results-meta"></div>
+      <div class="heading">YOUR PICKS</div>
+    </div>
+    <div class="results-sections" id="results-sections"></div>
+    <div class="footer-cta">
+      <div class="craving-box">
+        <div class="t">Craving something else?</div>
+        <div class="sub">Something on the menu I didn't mention? Type it in and I'll give you the verdict.</div>
+        <div class="craving-row">
+          <input type="text" id="craving-input" placeholder="e.g. the sticky toffee pudding">
+          <button class="craving-submit" data-action="craving-submit" aria-label="Get verdict">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+          </button>
+        </div>
+        <div class="craving-err" id="craving-err" hidden></div>
+        <div class="craving-result" id="craving-result"></div>
+      </div>
+      <button class="btn-outline" data-action="scan-another">SCAN ANOTHER MENU</button>
+    </div>
+  </div>
+
+  <!-- ═══════════ SETTINGS ═══════════ -->
+  <div class="screen" id="screen-settings" data-screen="settings">
+    <div class="back-row">
+      <button class="hex-btn" data-action="back-from-settings" aria-label="Back">
+        <div class="back-hex hex"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"></path></svg></div>
+      </button>
+      <div>
+        <div class="eyebrow">// ACCOUNT</div>
+        <div class="heading heading-sm">SETTINGS</div>
+      </div>
+    </div>
+    <div class="settings-profile">
+      <div class="avatar-hex-lg hex" id="settings-initials"></div>
+      <div>
+        <div class="name" id="settings-name"></div>
+        <div class="email" id="settings-email"></div>
+      </div>
+    </div>
+    <div class="field">
+      <div>
+        <div class="field-label">FIRST NAME</div>
+        <input type="text" id="settings-input-name">
+      </div>
+      <div>
+        <div class="field-label">EMAIL</div>
+        <input type="email" id="settings-input-email">
+      </div>
+      <div>
+        <div class="field-label">GOAL</div>
+        <div class="goal-row" id="settings-goal-row" data-target="settings"></div>
+      </div>
+      <div>
+        <div class="field-label">DAILY CALORIE TARGET</div>
+        <input type="number" id="settings-input-cals" placeholder="e.g. 2000">
+      </div>
+      <div>
+        <div class="field-label">DIETARY RESTRICTIONS</div>
+        <div class="steps" style="flex-direction:row;flex-wrap:wrap;gap:7px" id="settings-chips" data-target="settings"></div>
+      </div>
+      <div>
+        <div class="field-label">// APPEARANCE</div>
+        <div class="theme-row">
+          <button class="theme-btn" data-action="set-theme" data-theme="light">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8"></path></svg>
+            <div class="lbl">LIGHT</div>
+          </button>
+          <button class="theme-btn" data-action="set-theme" data-theme="dark">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+            <div class="lbl">DARK</div>
+          </button>
+          <button class="theme-btn" data-action="set-theme" data-theme="system">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"></circle><path d="M12 3 a9 9 0 0 1 0 18 z" fill="currentColor" stroke="none"></path></svg>
+            <div class="lbl">AUTO</div>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="footer-cta">
+      <button class="btn-primary" id="btn-save-settings" data-action="save-settings">SAVE CHANGES</button>
+    </div>
+  </div>
+
+</div>
+
+<input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+<input type="file" id="doc-input" accept=".pdf,.doc,.docx" hidden>
+
+<script src="app.js"></script>
+</body>
+</html>

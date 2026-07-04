@@ -1,0 +1,11 @@
+{
+  "name": "menu-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node api/analyse.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0"
+  }
+}
