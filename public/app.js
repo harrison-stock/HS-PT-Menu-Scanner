@@ -62,6 +62,16 @@ import { supabase } from './supabase-client.js';
   const ICON_CHECK = 'M4 12.5l5 5 11-11';
   const ICON_CLOSE = 'M6 18L18 6M6 6l12 12';
 
+  // ── Bot check ─────────────────────────────────────────────
+  // Cloudflare Turnstile, checked by Supabase Auth on sign-in, sign-up and
+  // password reset once CAPTCHA protection is switched on for the scanner's
+  // project (Supabase can't do sign-up alone). The site key is public. Left
+  // empty, the widget stays away and requests go out without a token - which
+  // is right until CAPTCHA is on, and is why the key has to be deployed
+  // *before* it is. Same arrangement as Login.jsx in the HS PT app.
+  const TURNSTILE_SITE_KEY = '';
+  const needCaptcha = !!TURNSTILE_SITE_KEY;
+
   // ── State ─────────────────────────────────────────────
   // Profile data now lives in Supabase (see supabase-client.js + the
   // `profiles` table) instead of localStorage — auth session persistence
@@ -84,6 +94,7 @@ import { supabase } from './supabase-client.js';
     errKind: null, errCustomBody: null,
     authMode: 'signup', authErr: null, resetMsg: null,
     needsPassword: false, setPwErr: null,
+    captchaToken: null, authBusy: false,
   };
 
   // ── DOM helpers ─────────────────────────────────────────────
@@ -415,7 +426,63 @@ import { supabase } from './supabase-client.js';
     }
   }
 
+  // A token is good for one request. Every attempt spends it, and the widget
+  // is reset to fetch the next one.
+  let turnstileWidget = null;
+  let turnstileLoading = null;
+
+  function loadTurnstile() {
+    if (!turnstileLoading) {
+      turnstileLoading = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        el.async = true;
+        el.onload = () => resolve(window.turnstile);
+        el.onerror = () => { turnstileLoading = null; reject(new Error('turnstile failed to load')); };
+        document.head.appendChild(el);
+      });
+    }
+    return turnstileLoading;
+  }
+
+  async function mountTurnstile() {
+    if (!needCaptcha || turnstileWidget !== null) return;
+    $('turnstile-slot').hidden = false;
+    turnstileWidget = 'pending';
+    try {
+      const ts = await loadTurnstile();
+      turnstileWidget = ts.render('#turnstile-slot', {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: isDark() ? 'dark' : 'light',
+        size: 'flexible',
+        callback: (token) => { state.captchaToken = token; renderAuth(); },
+        'expired-callback': () => { state.captchaToken = null; renderAuth(); },
+        'error-callback': () => {
+          state.captchaToken = null;
+          state.authErr = "The security check didn't load. Check your connection and refresh.";
+          renderAuth();
+        },
+      });
+    } catch (e) {
+      turnstileWidget = null;
+      state.authErr = "The security check didn't load. Check your connection and refresh.";
+      renderAuth();
+    }
+  }
+
+  function spendCaptcha() {
+    const token = state.captchaToken || undefined;
+    state.captchaToken = null;
+    if (window.turnstile && turnstileWidget && turnstileWidget !== 'pending') window.turnstile.reset(turnstileWidget);
+    return token;
+  }
+
+  const captchaReady = () => !needCaptcha || !!state.captchaToken;
+  const CAPTCHA_WAIT = 'One moment, finishing the security check.';
+
   function renderAuth() {
+    mountTurnstile();
+    $('auth-submit-btn').disabled = state.authBusy || !captchaReady();
     const isSignup = state.authMode === 'signup';
     $('auth-heading').textContent = isSignup ? 'CREATE ACCOUNT' : 'SIGN IN';
     $('auth-subtext').textContent = isSignup
@@ -593,8 +660,12 @@ import { supabase } from './supabase-client.js';
       const email = $('auth-email').value.trim();
       state.resetMsg = null;
       if (!email) { state.authErr = 'Enter your email above, then tap "Forgot password".'; render(); return; }
+      if (!captchaReady()) { state.authErr = CAPTCHA_WAIT; render(); return; }
       state.authErr = null;
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+        captchaToken: spendCaptcha(),
+      });
       if (error) { state.authErr = error.message; render(); return; }
       state.resetMsg = `A password reset link has been sent to ${email}.`;
       render();
@@ -604,16 +675,24 @@ import { supabase } from './supabase-client.js';
       const password = $('auth-password').value;
       state.authErr = null; state.resetMsg = null;
       if (!email || !password) { state.authErr = 'Enter your email and password.'; render(); return; }
+      if (!captchaReady()) { state.authErr = CAPTCHA_WAIT; render(); return; }
 
-      if (state.authMode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) { state.authErr = error.message; render(); }
-      } else {
-        const name = $('auth-name').value.trim();
-        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
-        if (error) { state.authErr = error.message; render(); return; }
-        if (data.session) await handleSessionChange(data.session);
+      const captchaToken = spendCaptcha();
+      state.authBusy = true; render();
+      try {
+        if (state.authMode === 'signin') {
+          const { error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken } });
+          if (error) state.authErr = error.message;
+        } else {
+          const name = $('auth-name').value.trim();
+          const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name }, captchaToken } });
+          if (error) state.authErr = error.message;
+          else if (data.session) { state.authBusy = false; await handleSessionChange(data.session); return; }
+        }
+      } finally {
+        state.authBusy = false;
       }
+      render();
     },
 
     'set-password-submit': async () => {

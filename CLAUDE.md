@@ -27,6 +27,16 @@ Brand: Harrison Stock Fitness, harrisonstock.co.uk / @harrisonstockfit
 6. Results: dish cards per course (pick / avoid, kcal and macros), a "craving something else?" box for a verdict on one dish, then scan another
 7. Settings: name, goal, calories, restrictions, theme, sign out
 
+## Bot check (Cloudflare Turnstile)
+
+Sign-in, sign-up and password reset carry a Turnstile token, which Supabase Auth checks once CAPTCHA protection is on for the scanner's project. Supabase can't check sign-up alone, so the widget covers all three. The site key is `TURNSTILE_SITE_KEY` at the top of `public/app.js` (public by design). Empty means no widget and no token, which is correct only while CAPTCHA is off in Supabase.
+
+Order matters when switching it on:
+1. Set the site key in `app.js` and deploy. The widget's allowed hostnames must include the scanner's domain.
+2. Only then put the secret key in Supabase (scanner project) → Authentication → Bot and Abuse Protection, and switch CAPTCHA on.
+
+The other way round, every sign-in fails until the widget exists to answer. Same arrangement as `Login.jsx` in the HS PT app.
+
 ## How `/api/analyse` works
 
 - **Every request must carry the user's Supabase access token** (`Authorization: Bearer ...`). The function calls the `claim_scan` RPC with that token, which both proves the caller is signed in and takes one of today's slots. No token, bad token, or no slots left means no Claude call.

@@ -98,7 +98,7 @@ a { color: var(--accent); }
 .field-label { font-size:11px; color:var(--text-3); letter-spacing:0.14em; text-transform:uppercase; margin-bottom:7px; }
 .field-hint { font-size:11px; color:var(--text-3); letter-spacing:0.04em; margin-top:5px; }
 
-input[type="text"], input[type="email"], input[type="number"], input[type="search"], textarea {
+input[type="text"], input[type="email"], input[type="password"], input[type="number"], input[type="search"], textarea {
   width:100%; background:var(--bg-2); border:1px solid var(--line); border-radius:12px;
   padding:13px 14px; color:var(--text); font-family:var(--font-body);
   font-size:14px; font-weight:500; box-sizing:border-box;
@@ -152,6 +152,10 @@ textarea { font-size:12px; line-height:1.6; min-height:88px; resize:none; }
   transition: all .15s ease;
 }
 .chip.is-sel { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); box-shadow:0 0 8px var(--accent-glow); }
+
+/* Fixed height so the form doesn't jump when the widget arrives. */
+.turnstile-slot { min-height:65px; margin-top:18px; display:flex; justify-content:center; }
+.turnstile-slot[hidden] { display:none; }
 
 /* ── Landing ─────────────────────────────────────────── */
 .landing-brand { display:flex; flex-direction:column; align-items:center; gap:0; text-align:center; margin-top:12px; }
