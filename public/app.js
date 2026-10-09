@@ -3,9 +3,9 @@ import { supabase } from './supabase-client.js';
 {
   // ── Reference data ─────────────────────────────────────────────
   const GOALS = [
-    { id: 'cutting', label: 'CUTTING', sub: 'FAT LOSS' },
-    { id: 'maintenance', label: 'MAINTAIN', sub: 'HOLD STEADY' },
-    { id: 'bulking', label: 'BULKING', sub: 'MUSCLE GAIN' },
+    { id: 'cutting', label: 'CUTTING', sub: 'FAT LOSS', icon: 'graph-descending' },
+    { id: 'maintenance', label: 'MAINTAIN', sub: 'HOLD STEADY', icon: 'weight-scales' },
+    { id: 'bulking', label: 'BULKING', sub: 'MUSCLE GAIN', icon: 'flexed-bicep' },
   ];
   const RESTRICTIONS = ['None', 'Vegetarian', 'Vegan', 'Gluten-free', 'Dairy-free', 'Halal'];
   const EG_IDEAS = [
@@ -28,13 +28,15 @@ import { supabase } from './supabase-client.js';
     { id: 'drinks', label: 'DRINKS' },
   ];
   const RESULTS_ORDER = ['drinks', 'starter', 'main', 'sides', 'dessert'];
+  // Brand icons (public/icons, from the HS PT app's set).
   const COURSE_ICONS = {
-    starter: 'M4 10h16M6 10c0-3.3 2.7-6 6-6s6 2.7 6 6M9 14l1 6h4l1-6',
-    main: 'M8 3v7a2 2 0 0 0 2 2v9M8 3v4M6 3v4M16 3c-1.5 0-2 3-2 5s.5 3 2 3v10',
-    sides: 'M4 6h16v3a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM7 13l1 7h8l1-7',
-    dessert: 'M5 21h14M6 18a6 6 0 0 1 12 0M12 5v3M10 6l2-2 2 2',
-    drinks: 'M6 3h12l-1.5 9a5 5 0 0 1-9 0zM12 18v3M9 21h6',
+    starter: 'salad',
+    main: 'dinner-plate',
+    sides: 'fries',
+    dessert: 'muffin',
+    drinks: 'alcohol',
   };
+  const icon = (name, size) => h`<span class="bi bi-${name}" aria-hidden="true"${size ? h` style="width:${size}px;height:${size}px"` : ''}></span>`;
   const CHAIN_CATS = ['All', 'Burgers', 'Chicken', 'Pizza', 'Sandwiches', 'Asian', 'Mexican', 'Coffee'];
   // Placeholder list — swap for the real downloaded chain nutrition data when available.
   const CHAINS = [
@@ -60,6 +62,26 @@ import { supabase } from './supabase-client.js';
   const ICON_CHECK = 'M4 12.5l5 5 11-11';
   const ICON_CLOSE = 'M6 18L18 6M6 6l12 12';
 
+  // ── Bot check ─────────────────────────────────────────────
+  // Cloudflare Turnstile, checked by Supabase Auth on sign-in, sign-up and
+  // password reset once CAPTCHA protection is switched on for the scanner's
+  // project (Supabase can't do sign-up alone). The site key is public. Left
+  // empty, the widget stays away and requests go out without a token - which
+  // is right until CAPTCHA is on, and is why the key has to be deployed
+  // *before* it is. Same arrangement as Login.jsx in the HS PT app.
+  const TURNSTILE_SITE_KEY = '';
+  const needCaptcha = !!TURNSTILE_SITE_KEY;
+
+  // ── Consent wording ─────────────────────────────────────────────
+  // Stored with every consent record as proof of what the person agreed to.
+  // Change the words and the new version is what gets recorded from then on;
+  // anyone who agreed to the old words keeps that record.
+  const MARKETING_WORDING = 'Email me occasional training and nutrition tips from Harrison Stock, including offers on coaching. Unsubscribe any time.';
+
+  // Restrictions that reveal something UK GDPR treats as special category
+  // data (religion), so they need explicit consent with the reason shown.
+  const SENSITIVE_RESTRICTIONS = ['Halal'];
+
   // ── State ─────────────────────────────────────────────
   // Profile data now lives in Supabase (see supabase-client.js + the
   // `profiles` table) instead of localStorage — auth session persistence
@@ -72,7 +94,7 @@ import { supabase } from './supabase-client.js';
     goal: null, cals: '',
     restrictions: [],
     touchedRestrictions: false,
-    theme: 'dark',
+    theme: 'system',
     menuText: '', photoData: null, photoType: null, photoName: '',
     hasDoc: false, docName: '', chainName: '',
     cravingText: '',
@@ -82,6 +104,8 @@ import { supabase } from './supabase-client.js';
     errKind: null, errCustomBody: null,
     authMode: 'signup', authErr: null, resetMsg: null,
     needsPassword: false, setPwErr: null,
+    captchaToken: null, authBusy: false,
+    marketing: null, marketingErr: null,
   };
 
   // ── DOM helpers ─────────────────────────────────────────────
@@ -108,6 +132,9 @@ import { supabase } from './supabase-client.js';
   }
   function applyTheme() {
     document.documentElement.setAttribute('data-theme', isDark() ? 'dark' : 'light');
+    // The status bar and home-indicator strip follow the theme picked here,
+    // not just the phone's setting.
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = isDark() ? '#0a0d0e' : '#ECEFF4'; });
   }
 
   // ── Derived helpers ─────────────────────────────────────────────
@@ -127,13 +154,15 @@ import { supabase } from './supabase-client.js';
     const el = $(containerId);
     el.innerHTML = GOALS.map(g => h`
       <button class="goal-btn" data-goal="${g.id}" data-sel="${state.goal === g.id ? '1' : '0'}" data-action="pick-goal" data-value="${g.id}">
-        <div class="icon-slot"><div class="hex-fill hex"></div></div>
+        <div class="icon-slot">${icon(g.icon, 26)}</div>
         <div class="label">${g.label}</div>
         <div class="sub">${g.sub}</div>
       </button>
     `).join('');
   }
   function renderChips(containerId) {
+    const note = $(containerId + '-note');
+    if (note) note.hidden = !state.restrictions.some(r => SENSITIVE_RESTRICTIONS.includes(r));
     const el = $(containerId);
     el.innerHTML = RESTRICTIONS.map(label => {
       const isNone = label === 'None';
@@ -172,9 +201,9 @@ import { supabase } from './supabase-client.js';
             <path d="${HEX_PATH}" fill="var(--bg-2)" stroke="var(--accent)" stroke-width="7" stroke-linejoin="round" style="filter:drop-shadow(0 0 14px var(--accent-glow))"></path>
           </svg>
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:0 34px">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.8 6.2A2.3 2.3 0 0 1 5.2 7.2c-.4.1-.8.1-1.1.2C3 7.6 2.3 8.5 2.3 9.6V18a2.3 2.3 0 0 0 2.3 2.3h15A2.3 2.3 0 0 0 21.8 18V9.6c0-1.1-.8-2-1.8-2.2-.4-.1-.8-.1-1.1-.2a2.3 2.3 0 0 1-1.6-1l-.8-1.3a2.2 2.2 0 0 0-1.7-1 48.8 48.8 0 0 0-5.2 0 2.2 2.2 0 0 0-1.7 1l-.8 1.3Z"></path><circle cx="12" cy="12.75" r="4.5"></circle></svg>
-            <div style="font-family:'Orbitron','Inter',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:var(--heading-deep)">TAKE A PHOTO</div>
-            <div style="font-size:9px;color:var(--text-3);letter-spacing:0.08em">OF THE MENU</div>
+            <span style="color:var(--accent)">${icon('camera', 46)}</span>
+            <div style="font-family:var(--font-head);font-weight:700;font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:var(--heading-deep)">TAKE A PHOTO</div>
+            <div style="font-size:11px;color:var(--text-3);letter-spacing:0.08em">OF THE MENU</div>
           </div>
         </button>
       `;
@@ -186,8 +215,8 @@ import { supabase } from './supabase-client.js';
           </svg>
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;text-align:center;padding:0 34px">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5 11-11"></path></svg>
-            <div style="font-family:'Orbitron','Inter',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent)">ATTACHED</div>
-            <div style="font-size:9px;color:var(--text-3);letter-spacing:0.06em">${escapeHtml(state.photoName || 'menu-photo.jpg')}</div>
+            <div style="font-family:var(--font-head);font-weight:700;font-size:13px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent)">ATTACHED</div>
+            <div style="font-size:11px;color:var(--text-3);letter-spacing:0.06em">${escapeHtml(state.photoName || 'menu-photo.jpg')}</div>
           </div>
           <button class="attach-remove" data-action="remove-photo" aria-label="Remove photo">×</button>
         </div>
@@ -209,11 +238,11 @@ import { supabase } from './supabase-client.js';
       el.innerHTML = h`
         <div class="doc-buttons">
           <button class="btn-ghost" data-action="attach-doc">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 18v1a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-1"></path></svg>
+            ${icon('notes', 20)}
             UPLOAD PDF / WORD
           </button>
           <button class="btn-ghost" data-action="go-chains">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+            ${icon('burger', 20)}
             BROWSE POPULAR CHAIN MENUS
           </button>
         </div>
@@ -237,7 +266,7 @@ import { supabase } from './supabase-client.js';
       const sel = state.courses.includes(c.id);
       return h`
         <button class="course-btn ${sel ? 'is-sel' : ''}" data-action="toggle-course" data-value="${c.id}">
-          <div class="icon-slot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${COURSE_ICONS[c.id]}"></path></svg></div>
+          <div class="icon-slot">${icon(COURSE_ICONS[c.id], 30)}</div>
           <div class="label">${c.label}</div>
         </button>
       `;
@@ -274,7 +303,7 @@ import { supabase } from './supabase-client.js';
     const title = kind === 'bugged' ? "THAT FILE WOULDN'T OPEN" : "COULDN'T READ THAT MENU";
     const body = state.errCustomBody || (kind === 'bugged'
       ? "The attachment came through corrupted or in a format we can't read, so there was nothing to scan."
-      : "We couldn't make out any real menu items in what came through — the photo may be blurry or the text unclear.");
+      : "We couldn't make out any real menu items in what came through. The photo may be blurry or the text unclear.");
     const tips = kind === 'bugged'
       ? ["Re-export it as a PDF, JPG or PNG", "Check the file isn't password-protected", "Or just type the menu in by hand"]
       : ["Hold steady and get the whole menu in frame", "Make sure there's enough light", "Or type the items in yourself"];
@@ -303,26 +332,26 @@ import { supabase } from './supabase-client.js';
       macrosHtml = h`
         <div class="macro-bar">
           <div style="width:${pP}%;background:var(--amber)"></div>
-          <div style="width:${pF}%;background:var(--coral)"></div>
           <div style="width:${pC}%;background:var(--accent);box-shadow:0 0 8px var(--accent-glow)"></div>
+          <div style="width:${pF}%;background:var(--coral)"></div>
         </div>
-        <div class="macro-bar-legend"><span style="color:var(--amber)">PROTEIN</span><span style="color:var(--coral)">FAT</span><span style="color:var(--accent)">CARBS</span></div>
+        <div class="macro-bar-legend"><span style="color:var(--amber)">PROTEIN</span><span style="color:var(--accent)">CARBS</span><span style="color:var(--coral)">FAT</span></div>
       `;
     }
     return h`
       <div class="dish-card">
         <div class="dish-card-head">
-          <div class="status-pill ${statusClass}">${isPick ? 'PICK' : 'AVOID'}</div>
+          <div class="status-pill ${statusClass}">${isPick ? 'PICK' : 'HEADS UP'}</div>
           ${hasTarget ? h`<div class="pct-pill ${statusClass}">${pctDay}% OF DAY</div>` : ''}
         </div>
         <div class="dish-name">${escapeHtml(d.name)}</div>
         <div class="dish-note">${escapeHtml(d.note)}</div>
         <div style="margin-top:12px">
           <div class="macro-row">
-            <div class="macro-item"><div class="ic" style="color:var(--kcal-blue)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3c1 3-1 4-2 6-1.5 3 .5 5 2 5s3-2 2.5-4c1.5 1 2 3 2 4a6.5 6.5 0 1 1-13 0c0-3 2-5 3-7 .5 2 1.5 2.5 2.5 1 .8-1.2 0-3 0-5z"></path></svg></div><div class="lbl">KCAL</div><div class="val">${d.kcal}</div></div>
-            <div class="macro-item"><div class="ic" style="color:var(--amber)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="9" r="5"></circle><path d="M11.5 12.5L4 20M4 20l1.5.5M4 20l.5 1.5"></path></svg></div><div class="lbl">PRO</div><div class="val">${d.protein}g</div></div>
-            <div class="macro-item"><div class="ic" style="color:var(--coral)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 4c4 0 8 3 8 8 0 5-4 8-8 8s-8-3-8-8c0-5 4-8 8-8z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></div><div class="lbl">FAT</div><div class="val">${d.fat}g</div></div>
-            <div class="macro-item"><div class="ic" style="color:var(--accent)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 9c0-2.5 3-4 7-4s7 1.5 7 4v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"></path><path d="M12 5v14"></path></svg></div><div class="lbl">CARB</div><div class="val">${d.carbs}g</div></div>
+            <div class="macro-item" style="color:var(--kcal-blue)"><div class="ic">${icon('flame')}</div><div class="lbl">KCAL</div><div class="val">${d.kcal}</div></div>
+            <div class="macro-item" style="color:var(--amber)"><div class="ic">${icon('steak')}</div><div class="lbl">PROT</div><div class="val">${d.protein}g</div></div>
+            <div class="macro-item" style="color:var(--accent)"><div class="ic">${icon('bread')}</div><div class="lbl">CARB</div><div class="val">${d.carbs}g</div></div>
+            <div class="macro-item" style="color:var(--coral)"><div class="ic">${icon('oil')}</div><div class="lbl">FAT</div><div class="val">${d.fat}g</div></div>
           </div>
           ${macrosHtml}
         </div>
@@ -347,7 +376,7 @@ import { supabase } from './supabase-client.js';
         return h`
           <div>
             <div class="result-section-head">
-              <div class="result-section-hex hex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${COURSE_ICONS[sec.course] || ''}"></path></svg></div>
+              <div class="result-section-icon">${icon(COURSE_ICONS[sec.course] || 'dinner-plate', 34)}</div>
               <div class="result-section-label">${courseLabel(sec.course)}</div>
             </div>
             <div class="empty-note">Nothing stood out on the menu for this course.</div>
@@ -357,7 +386,7 @@ import { supabase } from './supabase-client.js';
       return h`
         <div>
           <div class="result-section-head">
-            <div class="result-section-hex hex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${COURSE_ICONS[sec.course] || ''}"></path></svg></div>
+            <div class="result-section-icon">${icon(COURSE_ICONS[sec.course] || 'dinner-plate', 34)}</div>
             <div class="result-section-label">${courseLabel(sec.course)}</div>
           </div>
           <div class="dish-list">${sec.dishes.map(d => dishCardHtml(d, hasTarget, calTarget)).join('')}</div>
@@ -400,6 +429,7 @@ import { supabase } from './supabase-client.js';
       $('settings-email').textContent = state.email.trim() || '—';
       renderGoalRow('settings-goal-row');
       renderChips('settings-chips');
+      renderMarketingToggle();
       document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('is-sel', b.dataset.theme === state.theme));
       $('btn-save-settings').textContent = state.saved ? 'SAVED' : 'SAVE CHANGES';
     } else if (state.screen === 'auth') {
@@ -410,13 +440,90 @@ import { supabase } from './supabase-client.js';
     }
   }
 
+  // A token is good for one request. Every attempt spends it, and the widget
+  // is reset to fetch the next one.
+  let turnstileWidget = null;
+  let turnstileLoading = null;
+
+  function loadTurnstile() {
+    if (!turnstileLoading) {
+      turnstileLoading = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        el.async = true;
+        el.onload = () => resolve(window.turnstile);
+        el.onerror = () => { turnstileLoading = null; reject(new Error('turnstile failed to load')); };
+        document.head.appendChild(el);
+      });
+    }
+    return turnstileLoading;
+  }
+
+  async function mountTurnstile() {
+    if (!needCaptcha || turnstileWidget !== null) return;
+    $('turnstile-slot').hidden = false;
+    turnstileWidget = 'pending';
+    try {
+      const ts = await loadTurnstile();
+      turnstileWidget = ts.render('#turnstile-slot', {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: isDark() ? 'dark' : 'light',
+        size: 'flexible',
+        callback: (token) => { state.captchaToken = token; renderAuth(); },
+        'expired-callback': () => { state.captchaToken = null; renderAuth(); },
+        'error-callback': () => {
+          state.captchaToken = null;
+          state.authErr = "The security check didn't load. Check your connection and refresh.";
+          renderAuth();
+        },
+      });
+    } catch (e) {
+      turnstileWidget = null;
+      state.authErr = "The security check didn't load. Check your connection and refresh.";
+      renderAuth();
+    }
+  }
+
+  function spendCaptcha() {
+    const token = state.captchaToken || undefined;
+    state.captchaToken = null;
+    if (window.turnstile && turnstileWidget && turnstileWidget !== 'pending') window.turnstile.reset(turnstileWidget);
+    return token;
+  }
+
+  const captchaReady = () => !needCaptcha || !!state.captchaToken;
+  const CAPTCHA_WAIT = 'One moment, finishing the security check.';
+
+  // Settings: loaded fresh each time the screen opens, since it can only be
+  // read through the RPC.
+  async function loadMarketing() {
+    state.marketing = null; state.marketingErr = null;
+    renderMarketingToggle();
+    const { data, error } = await supabase.rpc('get_marketing_consent');
+    state.marketing = error ? null : !!data;
+    if (error) state.marketingErr = "Couldn't load your email preference.";
+    renderMarketingToggle();
+  }
+
+  function renderMarketingToggle() {
+    const box = $('settings-marketing');
+    box.checked = !!state.marketing;
+    box.disabled = state.marketing === null;
+    const errEl = $('settings-marketing-err');
+    errEl.hidden = !state.marketingErr;
+    errEl.textContent = state.marketingErr || '';
+  }
+
   function renderAuth() {
+    mountTurnstile();
+    $('auth-submit-btn').disabled = state.authBusy || !captchaReady();
     const isSignup = state.authMode === 'signup';
     $('auth-heading').textContent = isSignup ? 'CREATE ACCOUNT' : 'SIGN IN';
     $('auth-subtext').textContent = isSignup
       ? 'Takes 30 seconds. Get your first picks in a minute.'
       : 'Welcome back. Sign in to keep scanning.';
     $('auth-name-field').hidden = !isSignup;
+    $('auth-consent-row').hidden = !isSignup;
     $('auth-forgot-row').hidden = isSignup;
     $('auth-submit-btn').textContent = isSignup ? 'CREATE ACCOUNT' : 'SIGN IN';
     const toggleBtn = document.querySelector('[data-action="auth-toggle-mode"]');
@@ -462,9 +569,15 @@ import { supabase } from './supabase-client.js';
   }
 
   async function callAnalyse(body) {
+    // getSession refreshes the token if it has expired, so a scan after the
+    // phone has been in a pocket all evening still goes through.
+    const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch('/api/analyse', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + (session ? session.access_token : ''),
+      },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
@@ -479,7 +592,7 @@ import { supabase } from './supabase-client.js';
   // ── Action handlers ─────────────────────────────────────────────
   const actions = {
     'go-auth': () => { state.authMode = 'signup'; state.authErr = null; state.resetMsg = null; go('auth'); },
-    'go-settings': () => go('settings'),
+    'go-settings': () => { go('settings'); loadMarketing(); },
     'go-chains': () => go('chains'),
     'back-to-scanner': () => go('scanner'),
     'back-from-settings': () => go('scanner'),
@@ -582,8 +695,12 @@ import { supabase } from './supabase-client.js';
       const email = $('auth-email').value.trim();
       state.resetMsg = null;
       if (!email) { state.authErr = 'Enter your email above, then tap "Forgot password".'; render(); return; }
+      if (!captchaReady()) { state.authErr = CAPTCHA_WAIT; render(); return; }
       state.authErr = null;
-      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.origin,
+        captchaToken: spendCaptcha(),
+      });
       if (error) { state.authErr = error.message; render(); return; }
       state.resetMsg = `A password reset link has been sent to ${email}.`;
       render();
@@ -593,16 +710,30 @@ import { supabase } from './supabase-client.js';
       const password = $('auth-password').value;
       state.authErr = null; state.resetMsg = null;
       if (!email || !password) { state.authErr = 'Enter your email and password.'; render(); return; }
+      if (!captchaReady()) { state.authErr = CAPTCHA_WAIT; render(); return; }
 
-      if (state.authMode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) { state.authErr = error.message; render(); }
-      } else {
-        const name = $('auth-name').value.trim();
-        const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
-        if (error) { state.authErr = error.message; render(); return; }
-        if (data.session) await handleSessionChange(data.session);
+      const captchaToken = spendCaptcha();
+      state.authBusy = true; render();
+      try {
+        if (state.authMode === 'signin') {
+          const { error } = await supabase.auth.signInWithPassword({ email, password, options: { captchaToken } });
+          if (error) state.authErr = error.message;
+        } else {
+          const name = $('auth-name').value.trim();
+          // Read by a trigger on auth.users, which writes the consent record
+          // (supabase/migrations/20261009000002_marketing_consent.sql).
+          const marketing = $('auth-marketing').checked;
+          const { data, error } = await supabase.auth.signUp({ email, password, options: {
+            data: { name, marketing_consent: marketing, marketing_consent_wording: MARKETING_WORDING },
+            captchaToken,
+          } });
+          if (error) state.authErr = error.message;
+          else if (data.session) { state.authBusy = false; await handleSessionChange(data.session); return; }
+        }
+      } finally {
+        state.authBusy = false;
       }
+      render();
     },
 
     'set-password-submit': async () => {
@@ -688,7 +819,7 @@ import { supabase } from './supabase-client.js';
       go('results');
       if (data.ok === false) {
         $('craving-err').hidden = false;
-        $('craving-err').textContent = data.message || "Couldn't work that one out — try describing it differently.";
+        $('craving-err').textContent = data.message || "Couldn't work that one out. Try describing it differently.";
         return;
       }
       const calTarget = parseInt(state.cals, 10);
@@ -702,18 +833,74 @@ import { supabase } from './supabase-client.js';
   }
 
   // ── File handling ─────────────────────────────────────────────
-  $('camera-input').addEventListener('change', (e) => {
+  // Phone cameras produce 3-6MB photos at 4000px+. Sent as-is they break two
+  // limits: Vercel rejects request bodies over 4.5MB, and Claude rejects images
+  // over 5MB - and base64 adds a third on top. 1600px on the long edge is still
+  // plenty to read a menu, and comes out at a few hundred KB as a JPEG.
+  // Same approach as src/lib/imageCompress.js in the HS PT app.
+  const PHOTO_MAX_EDGE = 1600;
+  const PHOTO_QUALITY = 0.85;
+
+  function readAsDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function shrinkPhoto(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = url;
+      });
+      const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      // White under the image, so a transparent PNG doesn't turn black as a JPEG.
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', PHOTO_QUALITY));
+      if (!blob) throw new Error('encode failed');
+      return { blob, type: 'image/jpeg' };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  $('camera-input').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    state.photoType = file.type;
-    state.photoName = file.name;
     state.hasDoc = false; state.docName = ''; state.chainName = '';
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      state.photoData = ev.target.result.split(',')[1];
+    state.err = null;
+
+    // If the browser can't decode it (HEIC on desktop Chrome, say), fall back
+    // to the original - fine if it's small, and the size check below catches
+    // it if not.
+    let out = { blob: file, type: file.type };
+    try { out = await shrinkPhoto(file); } catch (err) { /* keep the original */ }
+
+    if (out.blob.size > 3 * 1024 * 1024) {
+      state.photoData = null; state.photoType = null; state.photoName = '';
+      state.err = "That photo's too large to send. Try a screenshot of it, or type in a few items instead.";
+      $('camera-input').value = '';
       render();
-    };
-    reader.readAsDataURL(file);
+      return;
+    }
+
+    const dataUrl = await readAsDataUrl(out.blob);
+    state.photoType = out.type;
+    state.photoName = file.name;
+    state.photoData = dataUrl.split(',')[1];
+    render();
   });
 
   $('doc-input').addEventListener('change', (e) => {
@@ -739,7 +926,7 @@ import { supabase } from './supabase-client.js';
           })
           .then(pages => {
             const text = pages.join('\n').trim();
-            if (!text) { showError('bugged', "This PDF doesn't contain selectable text. It's probably a scanned image — take a photo of the menu instead."); $('doc-input').value = ''; return; }
+            if (!text) { showError('bugged', "This PDF doesn't contain selectable text. It's probably a scanned image, so take a photo of the menu instead."); $('doc-input').value = ''; return; }
             state.menuText = text;
             state.hasDoc = true; state.docName = file.name;
             render();
@@ -774,6 +961,17 @@ import { supabase } from './supabase-client.js';
 
   $('input-menu-text').addEventListener('input', (e) => { state.menuText = e.target.value; state.err = null; });
   $('input-cals').addEventListener('input', (e) => { state.cals = e.target.value; });
+  $('settings-marketing').addEventListener('change', async (e) => {
+    const want = e.target.checked;
+    state.marketingErr = null;
+    state.marketing = want; renderMarketingToggle();
+    const { error } = await supabase.rpc('set_marketing_consent', { p_granted: want, p_wording: MARKETING_WORDING });
+    if (error) {
+      state.marketing = !want;
+      state.marketingErr = "Couldn't save that. Try again.";
+    }
+    renderMarketingToggle();
+  });
   $('settings-input-name').addEventListener('input', (e) => { state.name = e.target.value; });
   $('settings-input-cals').addEventListener('input', (e) => { state.cals = e.target.value; });
   $('chain-search').addEventListener('input', (e) => { state.chainQuery = e.target.value; renderChains(); });
@@ -821,7 +1019,7 @@ import { supabase } from './supabase-client.js';
       state.cals = profile.cals != null ? String(profile.cals) : '';
       state.restrictions = profile.restrictions || [];
       state.touchedRestrictions = true;
-      state.theme = profile.theme || 'dark';
+      state.theme = profile.theme || 'system';
       applyTheme();
 
       if (state.needsPassword) state.screen = 'set-password';
