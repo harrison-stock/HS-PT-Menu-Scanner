@@ -60,7 +60,16 @@ Schema changes go in `supabase/migrations/` as plain SQL, written to be safe to 
 - Mobile-first. This tool will almost exclusively be used on phones in restaurants.
 - No stock photos
 
-Visual identity follows the HS PT app (`src/index.css` there is the reference): HS palette and tokens, Orbitron for headings and figures, the hex motif, the brand icon set, light/dark themes. **Exception: body text stays JetBrains Mono** here (the HS PT app uses Exo 2). Bringing the rest of the look in line is planned work.
+Visual identity follows the HS PT app (`src/index.css` there is the reference):
+
+- **Tokens:** the `:root` block in `public/styles.css` mirrors the app's colours, including the contrast-fixed `--text-3`. If the app changes a token, change it here too.
+- **Type:** Orbitron for headings and figures, JetBrains Mono for everything else (the app's default body face; it also offers Exo 2, the scanner doesn't). No Inter.
+- **Type floor:** nothing under 11px, sentences at 13px or more, the same floor the app uses for clients.
+- **Icons:** the brand set, copied from the app's `public/icons` into `public/icons/` (kebab-case names), drawn as CSS masks via `.bi .bi-<name>` so they take the surrounding text colour. Copy more across from the app rather than drawing new ones.
+- **Theme:** follows the phone by default (`system`), with light/dark overrides in Settings.
+- **Macros:** always in the order kcal, protein, carbs, fat, coloured blue, amber, teal, coral, as on the app's recipe cards.
+- **"Heads up" dishes** are amber, not red: information, not a warning.
+- Home-screen and tab icons are the HS mark, the same files as the app's.
 
 ## What NOT to build (parked for v2)
 
@@ -74,11 +83,9 @@ Do not add any of these unless explicitly asked.
 
 ## CTA and lead capture
 
-Email is captured at sign-up, before the first scan. The results screen should end with a subtle CTA:
+Email is captured at sign-up, before the first scan. The results screen ends with a subtle CTA:
 
 "Want help building a full nutrition plan? Book a free call with Harrison → harrisonstock.co.uk"
-
-(Not built yet.)
 
 ## When making changes
 

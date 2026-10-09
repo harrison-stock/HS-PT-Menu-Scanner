@@ -3,9 +3,9 @@ import { supabase } from './supabase-client.js';
 {
   // ── Reference data ─────────────────────────────────────────────
   const GOALS = [
-    { id: 'cutting', label: 'CUTTING', sub: 'FAT LOSS' },
-    { id: 'maintenance', label: 'MAINTAIN', sub: 'HOLD STEADY' },
-    { id: 'bulking', label: 'BULKING', sub: 'MUSCLE GAIN' },
+    { id: 'cutting', label: 'CUTTING', sub: 'FAT LOSS', icon: 'graph-descending' },
+    { id: 'maintenance', label: 'MAINTAIN', sub: 'HOLD STEADY', icon: 'weight-scales' },
+    { id: 'bulking', label: 'BULKING', sub: 'MUSCLE GAIN', icon: 'flexed-bicep' },
   ];
   const RESTRICTIONS = ['None', 'Vegetarian', 'Vegan', 'Gluten-free', 'Dairy-free', 'Halal'];
   const EG_IDEAS = [
@@ -28,13 +28,15 @@ import { supabase } from './supabase-client.js';
     { id: 'drinks', label: 'DRINKS' },
   ];
   const RESULTS_ORDER = ['drinks', 'starter', 'main', 'sides', 'dessert'];
+  // Brand icons (public/icons, from the HS PT app's set).
   const COURSE_ICONS = {
-    starter: 'M4 10h16M6 10c0-3.3 2.7-6 6-6s6 2.7 6 6M9 14l1 6h4l1-6',
-    main: 'M8 3v7a2 2 0 0 0 2 2v9M8 3v4M6 3v4M16 3c-1.5 0-2 3-2 5s.5 3 2 3v10',
-    sides: 'M4 6h16v3a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM7 13l1 7h8l1-7',
-    dessert: 'M5 21h14M6 18a6 6 0 0 1 12 0M12 5v3M10 6l2-2 2 2',
-    drinks: 'M6 3h12l-1.5 9a5 5 0 0 1-9 0zM12 18v3M9 21h6',
+    starter: 'salad',
+    main: 'dinner-plate',
+    sides: 'fries',
+    dessert: 'muffin',
+    drinks: 'alcohol',
   };
+  const icon = (name, size) => h`<span class="bi bi-${name}" aria-hidden="true"${size ? h` style="width:${size}px;height:${size}px"` : ''}></span>`;
   const CHAIN_CATS = ['All', 'Burgers', 'Chicken', 'Pizza', 'Sandwiches', 'Asian', 'Mexican', 'Coffee'];
   // Placeholder list — swap for the real downloaded chain nutrition data when available.
   const CHAINS = [
@@ -72,7 +74,7 @@ import { supabase } from './supabase-client.js';
     goal: null, cals: '',
     restrictions: [],
     touchedRestrictions: false,
-    theme: 'dark',
+    theme: 'system',
     menuText: '', photoData: null, photoType: null, photoName: '',
     hasDoc: false, docName: '', chainName: '',
     cravingText: '',
@@ -108,6 +110,9 @@ import { supabase } from './supabase-client.js';
   }
   function applyTheme() {
     document.documentElement.setAttribute('data-theme', isDark() ? 'dark' : 'light');
+    // The status bar and home-indicator strip follow the theme picked here,
+    // not just the phone's setting.
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = isDark() ? '#0a0d0e' : '#ECEFF4'; });
   }
 
   // ── Derived helpers ─────────────────────────────────────────────
@@ -127,7 +132,7 @@ import { supabase } from './supabase-client.js';
     const el = $(containerId);
     el.innerHTML = GOALS.map(g => h`
       <button class="goal-btn" data-goal="${g.id}" data-sel="${state.goal === g.id ? '1' : '0'}" data-action="pick-goal" data-value="${g.id}">
-        <div class="icon-slot"><div class="hex-fill hex"></div></div>
+        <div class="icon-slot">${icon(g.icon, 26)}</div>
         <div class="label">${g.label}</div>
         <div class="sub">${g.sub}</div>
       </button>
@@ -172,9 +177,9 @@ import { supabase } from './supabase-client.js';
             <path d="${HEX_PATH}" fill="var(--bg-2)" stroke="var(--accent)" stroke-width="7" stroke-linejoin="round" style="filter:drop-shadow(0 0 14px var(--accent-glow))"></path>
           </svg>
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:0 34px">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.8 6.2A2.3 2.3 0 0 1 5.2 7.2c-.4.1-.8.1-1.1.2C3 7.6 2.3 8.5 2.3 9.6V18a2.3 2.3 0 0 0 2.3 2.3h15A2.3 2.3 0 0 0 21.8 18V9.6c0-1.1-.8-2-1.8-2.2-.4-.1-.8-.1-1.1-.2a2.3 2.3 0 0 1-1.6-1l-.8-1.3a2.2 2.2 0 0 0-1.7-1 48.8 48.8 0 0 0-5.2 0 2.2 2.2 0 0 0-1.7 1l-.8 1.3Z"></path><circle cx="12" cy="12.75" r="4.5"></circle></svg>
-            <div style="font-family:'Orbitron','Inter',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:var(--heading-deep)">TAKE A PHOTO</div>
-            <div style="font-size:9px;color:var(--text-3);letter-spacing:0.08em">OF THE MENU</div>
+            <span style="color:var(--accent)">${icon('camera', 46)}</span>
+            <div style="font-family:var(--font-head);font-weight:700;font-size:13px;letter-spacing:0.1em;text-transform:uppercase;color:var(--heading-deep)">TAKE A PHOTO</div>
+            <div style="font-size:11px;color:var(--text-3);letter-spacing:0.08em">OF THE MENU</div>
           </div>
         </button>
       `;
@@ -186,8 +191,8 @@ import { supabase } from './supabase-client.js';
           </svg>
           <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;text-align:center;padding:0 34px">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5 11-11"></path></svg>
-            <div style="font-family:'Orbitron','Inter',sans-serif;font-weight:700;font-size:13px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent)">ATTACHED</div>
-            <div style="font-size:9px;color:var(--text-3);letter-spacing:0.06em">${escapeHtml(state.photoName || 'menu-photo.jpg')}</div>
+            <div style="font-family:var(--font-head);font-weight:700;font-size:13px;letter-spacing:0.14em;text-transform:uppercase;color:var(--accent)">ATTACHED</div>
+            <div style="font-size:11px;color:var(--text-3);letter-spacing:0.06em">${escapeHtml(state.photoName || 'menu-photo.jpg')}</div>
           </div>
           <button class="attach-remove" data-action="remove-photo" aria-label="Remove photo">×</button>
         </div>
@@ -209,11 +214,11 @@ import { supabase } from './supabase-client.js';
       el.innerHTML = h`
         <div class="doc-buttons">
           <button class="btn-ghost" data-action="attach-doc">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 18v1a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-1"></path></svg>
+            ${icon('notes', 20)}
             UPLOAD PDF / WORD
           </button>
           <button class="btn-ghost" data-action="go-chains">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+            ${icon('burger', 20)}
             BROWSE POPULAR CHAIN MENUS
           </button>
         </div>
@@ -237,7 +242,7 @@ import { supabase } from './supabase-client.js';
       const sel = state.courses.includes(c.id);
       return h`
         <button class="course-btn ${sel ? 'is-sel' : ''}" data-action="toggle-course" data-value="${c.id}">
-          <div class="icon-slot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${COURSE_ICONS[c.id]}"></path></svg></div>
+          <div class="icon-slot">${icon(COURSE_ICONS[c.id], 30)}</div>
           <div class="label">${c.label}</div>
         </button>
       `;
@@ -274,7 +279,7 @@ import { supabase } from './supabase-client.js';
     const title = kind === 'bugged' ? "THAT FILE WOULDN'T OPEN" : "COULDN'T READ THAT MENU";
     const body = state.errCustomBody || (kind === 'bugged'
       ? "The attachment came through corrupted or in a format we can't read, so there was nothing to scan."
-      : "We couldn't make out any real menu items in what came through — the photo may be blurry or the text unclear.");
+      : "We couldn't make out any real menu items in what came through. The photo may be blurry or the text unclear.");
     const tips = kind === 'bugged'
       ? ["Re-export it as a PDF, JPG or PNG", "Check the file isn't password-protected", "Or just type the menu in by hand"]
       : ["Hold steady and get the whole menu in frame", "Make sure there's enough light", "Or type the items in yourself"];
@@ -303,26 +308,26 @@ import { supabase } from './supabase-client.js';
       macrosHtml = h`
         <div class="macro-bar">
           <div style="width:${pP}%;background:var(--amber)"></div>
-          <div style="width:${pF}%;background:var(--coral)"></div>
           <div style="width:${pC}%;background:var(--accent);box-shadow:0 0 8px var(--accent-glow)"></div>
+          <div style="width:${pF}%;background:var(--coral)"></div>
         </div>
-        <div class="macro-bar-legend"><span style="color:var(--amber)">PROTEIN</span><span style="color:var(--coral)">FAT</span><span style="color:var(--accent)">CARBS</span></div>
+        <div class="macro-bar-legend"><span style="color:var(--amber)">PROTEIN</span><span style="color:var(--accent)">CARBS</span><span style="color:var(--coral)">FAT</span></div>
       `;
     }
     return h`
       <div class="dish-card">
         <div class="dish-card-head">
-          <div class="status-pill ${statusClass}">${isPick ? 'PICK' : 'AVOID'}</div>
+          <div class="status-pill ${statusClass}">${isPick ? 'PICK' : 'HEADS UP'}</div>
           ${hasTarget ? h`<div class="pct-pill ${statusClass}">${pctDay}% OF DAY</div>` : ''}
         </div>
         <div class="dish-name">${escapeHtml(d.name)}</div>
         <div class="dish-note">${escapeHtml(d.note)}</div>
         <div style="margin-top:12px">
           <div class="macro-row">
-            <div class="macro-item"><div class="ic" style="color:var(--kcal-blue)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3c1 3-1 4-2 6-1.5 3 .5 5 2 5s3-2 2.5-4c1.5 1 2 3 2 4a6.5 6.5 0 1 1-13 0c0-3 2-5 3-7 .5 2 1.5 2.5 2.5 1 .8-1.2 0-3 0-5z"></path></svg></div><div class="lbl">KCAL</div><div class="val">${d.kcal}</div></div>
-            <div class="macro-item"><div class="ic" style="color:var(--amber)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="15" cy="9" r="5"></circle><path d="M11.5 12.5L4 20M4 20l1.5.5M4 20l.5 1.5"></path></svg></div><div class="lbl">PRO</div><div class="val">${d.protein}g</div></div>
-            <div class="macro-item"><div class="ic" style="color:var(--coral)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 4c4 0 8 3 8 8 0 5-4 8-8 8s-8-3-8-8c0-5 4-8 8-8z"></path><circle cx="12" cy="12" r="2.5"></circle></svg></div><div class="lbl">FAT</div><div class="val">${d.fat}g</div></div>
-            <div class="macro-item"><div class="ic" style="color:var(--accent)"><svg width="18" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 9c0-2.5 3-4 7-4s7 1.5 7 4v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"></path><path d="M12 5v14"></path></svg></div><div class="lbl">CARB</div><div class="val">${d.carbs}g</div></div>
+            <div class="macro-item" style="color:var(--kcal-blue)"><div class="ic">${icon('flame')}</div><div class="lbl">KCAL</div><div class="val">${d.kcal}</div></div>
+            <div class="macro-item" style="color:var(--amber)"><div class="ic">${icon('steak')}</div><div class="lbl">PROT</div><div class="val">${d.protein}g</div></div>
+            <div class="macro-item" style="color:var(--accent)"><div class="ic">${icon('bread')}</div><div class="lbl">CARB</div><div class="val">${d.carbs}g</div></div>
+            <div class="macro-item" style="color:var(--coral)"><div class="ic">${icon('oil')}</div><div class="lbl">FAT</div><div class="val">${d.fat}g</div></div>
           </div>
           ${macrosHtml}
         </div>
@@ -347,7 +352,7 @@ import { supabase } from './supabase-client.js';
         return h`
           <div>
             <div class="result-section-head">
-              <div class="result-section-hex hex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${COURSE_ICONS[sec.course] || ''}"></path></svg></div>
+              <div class="result-section-icon">${icon(COURSE_ICONS[sec.course] || 'dinner-plate', 34)}</div>
               <div class="result-section-label">${courseLabel(sec.course)}</div>
             </div>
             <div class="empty-note">Nothing stood out on the menu for this course.</div>
@@ -357,7 +362,7 @@ import { supabase } from './supabase-client.js';
       return h`
         <div>
           <div class="result-section-head">
-            <div class="result-section-hex hex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${COURSE_ICONS[sec.course] || ''}"></path></svg></div>
+            <div class="result-section-icon">${icon(COURSE_ICONS[sec.course] || 'dinner-plate', 34)}</div>
             <div class="result-section-label">${courseLabel(sec.course)}</div>
           </div>
           <div class="dish-list">${sec.dishes.map(d => dishCardHtml(d, hasTarget, calTarget)).join('')}</div>
@@ -694,7 +699,7 @@ import { supabase } from './supabase-client.js';
       go('results');
       if (data.ok === false) {
         $('craving-err').hidden = false;
-        $('craving-err').textContent = data.message || "Couldn't work that one out — try describing it differently.";
+        $('craving-err').textContent = data.message || "Couldn't work that one out. Try describing it differently.";
         return;
       }
       const calTarget = parseInt(state.cals, 10);
@@ -801,7 +806,7 @@ import { supabase } from './supabase-client.js';
           })
           .then(pages => {
             const text = pages.join('\n').trim();
-            if (!text) { showError('bugged', "This PDF doesn't contain selectable text. It's probably a scanned image — take a photo of the menu instead."); $('doc-input').value = ''; return; }
+            if (!text) { showError('bugged', "This PDF doesn't contain selectable text. It's probably a scanned image, so take a photo of the menu instead."); $('doc-input').value = ''; return; }
             state.menuText = text;
             state.hasDoc = true; state.docName = file.name;
             render();
@@ -883,7 +888,7 @@ import { supabase } from './supabase-client.js';
       state.cals = profile.cals != null ? String(profile.cals) : '';
       state.restrictions = profile.restrictions || [];
       state.touchedRestrictions = true;
-      state.theme = profile.theme || 'dark';
+      state.theme = profile.theme || 'system';
       applyTheme();
 
       if (state.needsPassword) state.screen = 'set-password';
