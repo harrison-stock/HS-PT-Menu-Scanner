@@ -1,134 +1,87 @@
-# CLAUDE.md — Menu Scanner by Harrison Stock Fitness
+# CLAUDE.md: Menu Scanner by Harrison Stock Fitness
 
 ## What this project is
 
-A mobile-first web app that lets someone photograph a restaurant or takeaway menu and get personalised meal recommendations based on their goal (cutting, maintenance, or bulking) and dietary restrictions. It doubles as a lead magnet for Harrison Stock's personal training business in Exeter.
+A mobile-first web app. Someone photographs a restaurant or takeaway menu (or types it in, uploads a PDF/Word copy, or picks a UK chain) and gets course-by-course picks for their goal (cutting, maintenance or bulking) and dietary restrictions. It is a lead magnet for Harrison Stock's personal training business in Exeter.
 
-Live URL: hosted on Vercel, auto-deploys from this repo.
-Brand: Harrison Stock Fitness — harrisonstock.co.uk / @harrisonstockfit
+It is a **separate product** from the HS PT coaching app (`harrison-stock/HS-PT-App`) and stays that way: separate repo, separate deployment, separate Supabase project, so leads never mix with training clients. It should *look* like the HS PT app (see Brand below), but don't merge code or data with it.
+
+Live URL: hosted on Vercel, auto-deploys from `main`.
+Brand: Harrison Stock Fitness, harrisonstock.co.uk / @harrisonstockfit
 
 ## Tech stack
 
-- Node.js / Express backend
-- Vanilla HTML/CSS/JS frontend (keep it simple, no frameworks)
-- Claude API (claude-sonnet-4-5-20250929) with vision capability for menu image analysis
-- localStorage for user profiles (no database in v1)
-- Hosted on Vercel via GitHub
+- Vanilla HTML/CSS/JS frontend in `public/` (no frameworks, no build step)
+- One Vercel serverless function: `api/analyse.js` (Node, ESM, `@anthropic-ai/sdk`)
+- Supabase (the scanner's own project, ref `sjxoihkqmubrmkbrbxre`) for sign-in, the `profiles` table and the daily scan allowance. The client is vendored at `public/vendor/supabase-js.js`
+- Claude API, model `claude-sonnet-5-5`, with vision for menu photos
+- pdf.js and mammoth (from cdnjs) to pull text out of PDF and .docx menus in the browser
 
 ## User flow
 
-1. Landing page — branded, short explanation of the tool
-2. Profile creation: first name, email, goal (cutting/maintenance/bulking), optional calorie target, dietary restrictions
-3. Profile saved to localStorage
-4. Scanner screen: camera capture OR text input fallback
-5. Menu image (or text) sent to Claude API with user profile context
-6. Results screen: top picks, alternatives, heads-up items, plus CTA to book a free consultation
+1. Landing page
+2. Sign up / sign in (email + password, Supabase Auth). Returning users with a live session skip straight past this
+3. Profile: goal, optional calorie target, dietary restrictions. Saved to the `profiles` table
+4. Scanner: camera photo, document upload, chain picker, or typed menu
+5. Course picker: starters, mains, sides, desserts, drinks
+6. Results: dish cards per course (pick / avoid, kcal and macros), a "craving something else?" box for a verdict on one dish, then scan another
+7. Settings: name, goal, calories, restrictions, theme, sign out
 
-Returning users skip profile creation and go straight to the scanner.
+## How `/api/analyse` works
 
-## API call structure
+- **Every request must carry the user's Supabase access token** (`Authorization: Bearer ...`). The function calls the `claim_scan` RPC with that token, which both proves the caller is signed in and takes one of today's slots. No token, bad token, or no slots left means no Claude call.
+- **Daily allowance:** 3 menu scans and 10 craving checks per user per day, reset at midnight UK time. Counted server-side in `scan_usage`; see `supabase/migrations/20261009000001_scan_usage.sql`. Users can't read or edit that table directly. There's deliberately no refund function, because anything the API can call with the user's token, the user can call too.
+- It fails closed: if the allowance can't be checked, the request is refused.
+- Two modes: a menu scan (`submit_picks` tool) and a single-dish craving check (`mode: "craving"`, `submit_verdict` tool). Both use `tool_choice: auto` with `strict: true` tools, retrying once if Claude doesn't call the tool. Sonnet 5.5 rejects forced `tool_choice`.
+- `output_config.effort` is `low`; thinking is left at the model default (adaptive). `max_tokens` covers thinking as well as output, so don't cut it back to the old 600/1600.
+- Input caps: menu text 20,000 chars, chain name 80, dish 200, images JPEG/PNG/WebP/GIF only.
+- The API key stays server-side. Never expose it to the client.
 
-- Menu images are sent as base64-encoded images to the Claude messages API
-- The API call happens server-side (never expose the API key client-side)
-- The system prompt lives in the backend — see the SYSTEM_PROMPT section below
-- max_tokens: 600
-- Rate limit: 3 scans per day per user (tracked in localStorage for v1)
+## Photos
 
-## The system prompt
+`public/app.js` shrinks every photo to 1600px on the long edge as a JPEG before sending (same idea as `src/lib/imageCompress.js` in the HS PT app). Without that, a normal phone photo breaks Vercel's 4.5MB request limit and Claude's 5MB image limit. Don't remove it. Test camera capture on a real phone after touching any of this: that's the primary use case.
 
-Use this exactly for the Claude API system prompt. Do not modify it without explicit instruction.
+## The system prompts
 
-```
-You are a nutrition advisor built into a tool by Harrison Stock, a personal trainer based in Exeter who specialises in sustainable weight management for busy adults.
+The prompts live in `api/analyse.js`: `SCAN_SYSTEM_PROMPT`, `CRAVING_SYSTEM_PROMPT`, and the shared `GOAL_GUIDANCE`, `CALORIE_RULES` and `TONE_RULES` blocks. That file is the source of truth. **Don't change prompt wording without confirming with Harrison first.** `TONE_RULES` in particular is his voice, so leave it alone unless asked.
 
-Your job: look at this menu and recommend what to eat and drink based on the person's goal and restrictions. Be practical, not preachy.
+`SCAN_SYSTEM_PROMPT` is fully static so the cached prefix holds across requests. Anything that varies per request (courses, profile) goes in the user message.
 
-## CONTEXT YOU'LL RECEIVE
-- The person's goal: cutting (fat loss), maintenance, or bulking (muscle gain)
-- Their approximate daily calorie target (if provided — if not, use sensible defaults: ~1800-2100 kcal for cutting, ~2200-2600 for maintenance, ~2800-3200 for bulking, adjusting if context suggests otherwise)
-- Any dietary restrictions
-- A photo of a menu OR a text list of menu items
+## Database
 
-## WHAT TO RETURN
+Schema changes go in `supabase/migrations/` as plain SQL, written to be safe to run twice. There's no migration runner here: Harrison runs each file in the Supabase SQL editor for the scanner project **before** the code that depends on it reaches `main`. The `profiles` table predates this folder and isn't in it yet.
 
-Structure your response in three sections:
-
-**Top picks** (2-3 items)
-For each: the dish name, a rough calorie estimate, and one sentence on why it fits their goal. Lead with protein content where relevant.
-
-**Could also work** (1-2 items)
-Decent options that didn't quite make the top picks. Brief explanation.
-
-**Heads up** (1-2 items)
-Dishes that might look like good choices but aren't ideal for their goal. Explain why briefly — no guilt, no judgement, just information. Frame it as "this one's higher in X than you'd expect" rather than "avoid this" or "bad choice."
-
-If the person is cutting, prioritise: high protein, moderate portion size, lower calorie density. Suggest modifications where obvious (e.g., "ask for dressing on the side" or "swap chips for a side salad if they'll do it").
-
-If maintaining, prioritise: balanced macros, reasonable portion. More flexibility.
-
-If bulking, prioritise: high protein, higher calorie options, calorie-dense sides. Don't just recommend the biggest thing on the menu — still think about protein quality.
-
-For drinks: suggest a low-calorie option if cutting. If maintaining or bulking, mention that drinks are where hidden calories often sit but don't be militant about it.
-
-## CALORIE ESTIMATES
-Be honest that these are rough estimates. Say "roughly" or "around" — never give false precision. If you genuinely can't estimate (e.g., unfamiliar dish, no portion info), say so rather than guessing wildly.
-
-## TONE AND LANGUAGE RULES
-
-You are writing as if Harrison himself is giving advice to a mate. Warm, direct, no waffle.
-
-Strict rules:
-- Write in UK English (colour, favour, specialise, etc.)
-- Use short sentences. Mix sentence lengths naturally.
-- No em dashes. Use commas, full stops, or semicolons instead.
-- Never use these words: delve, tapestry, vibrant, pivotal, showcase, testament, underscore, landscape, multifaceted, comprehensive, cornerstone, foster, leverage (as a verb), navigate (figuratively), realm, robust, harnessing, groundbreaking, nestled, renowned, diverse array, rich (figuratively), profound, enhancing, commitment to, in the heart of, not just X but also Y
-- Never use "rule of three" phrasing like "X, Y, and Z" where the three items are vague abstractions
-- Don't start sentences with "Whether you're..." or "From X to Y..."
-- No exclamation marks
-- No emoji
-- Don't say "great choice" or "excellent option" or similar cheerleading
-- Don't moralise about food. No "guilty pleasures," no "treats," no "cheat meals," no "naughty but nice"
-- Don't say "fuel your body" or "fuel your goals"
-- Never use the phrase "here's the thing" or "let's dive in"
-- Avoid starting paragraphs with "So," or "Now,"
-- Keep the total response under 300 words
-
-If the menu image is unclear or unreadable, say so plainly: "I can't make out enough of this menu to give you good advice. Try taking the photo in better light, or type in a few items and I'll work with those."
-
-If there are genuinely no good options for the person's goal, be honest about it: "This menu's quite limited for what you're after. Here's what I'd do to make the best of it..."
-```
-
-## Brand and tone rules (for UI copy and any text Claude Code writes)
+## Brand and tone rules (UI copy and anything you write)
 
 - UK English always (colour, favour, specialise, programme)
 - No fitness-bro energy. Calm, competent, direct.
-- No generic AI language. Avoid the words listed in the system prompt above — they apply to all copy, not just API responses.
-- No exclamation marks, no emoji, no hype language
-- Mobile-first design. This tool will almost exclusively be used on phones in restaurants.
-- Clean sans-serif font (Inter or similar)
+- No generic AI language. The banned-word list in `TONE_RULES` applies to all copy, not just API responses.
+- No exclamation marks, no emoji, no hype, no em dashes
+- Mobile-first. This tool will almost exclusively be used on phones in restaurants.
 - No stock photos
 
-## What NOT to build (v2 features, parked for now)
+Visual identity follows the HS PT app (`src/index.css` there is the reference): HS palette and tokens, Orbitron for headings and figures, the hex motif, the brand icon set, light/dark themes. **Exception: body text stays JetBrains Mono** here (the HS PT app uses Exo 2). Bringing the rest of the look in line is planned work.
+
+## What NOT to build (parked for v2)
 
 - Calorie target calculator
 - Scan history
 - Barcode scanning
 - Meal logging
-- Backend database
 - Admin dashboard
-- User accounts / auth
 
 Do not add any of these unless explicitly asked.
 
 ## CTA and lead capture
 
-The email capture happens during profile creation (before first scan). The results screen should include a subtle CTA at the bottom:
+Email is captured at sign-up, before the first scan. The results screen should end with a subtle CTA:
 
 "Want help building a full nutrition plan? Book a free call with Harrison → harrisonstock.co.uk"
 
+(Not built yet.)
+
 ## When making changes
 
-- Keep the codebase simple. Do not introduce frameworks, build tools, or complexity that isn't needed.
-- Test camera functionality on mobile — that's the primary use case.
-- If changing the system prompt, confirm the change with the user first.
-- Always preserve the existing user flow unless told otherwise.
+- Keep the codebase simple. No frameworks, build tools, or complexity that isn't needed.
+- Preserve the user flow unless told otherwise.
+- Confirm with Harrison before changing any system prompt.
