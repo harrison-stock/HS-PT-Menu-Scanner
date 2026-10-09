@@ -4,6 +4,22 @@ const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+const MODEL = "claude-sonnet-5-5";
+
+// The scanner's own Supabase project (not the coaching app's). Both values are
+// public - the same ones public/supabase-client.js ships to every browser - so
+// they live here as defaults rather than as one more thing to set on Vercel.
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://sjxoihkqmubrmkbrbxre.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNqeG9paGtxbXVicm1rYnJieHJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNDc1MTUsImV4cCI6MjA5ODcyMzUxNX0.YVELViL1l5ke7g5xgqGt2JOp6NohR544W1Mc7HftpY8";
+
+// Generous ceilings, there to stop someone posting a novel, not to trim real
+// menus. Images are already capped by Vercel's 4.5MB request limit; the app
+// shrinks photos well below that before sending.
+const MAX_MENU_TEXT = 20000;
+const MAX_CHAIN_NAME = 80;
+const MAX_DISH = 200;
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
 const COURSE_LABELS = {
   starter: "starters",
   main: "mains",
@@ -105,16 +121,18 @@ const DISH_SCHEMA = {
     note: { type: "string", description: "One short sentence." },
   },
   required: ["name", "status", "kcal", "protein", "carbs", "fat", "emptyCalories", "note"],
+  additionalProperties: false,
 };
 
 const SUBMIT_PICKS_TOOL = {
   name: "submit_picks",
   description: "Submit the structured, course-grouped menu analysis.",
+  strict: true,
   input_schema: {
     type: "object",
     properties: {
       ok: { type: "boolean", description: "False only if the menu genuinely could not be read." },
-      message: { type: "string", description: "Only set when ok is false: a short explanation to show the user." },
+      message: { type: "string", description: "When ok is false: a short explanation to show the user. Empty string when ok is true." },
       sections: {
         type: "array",
         items: {
@@ -124,24 +142,29 @@ const SUBMIT_PICKS_TOOL = {
             dishes: { type: "array", items: DISH_SCHEMA },
           },
           required: ["course", "dishes"],
+          additionalProperties: false,
         },
+        description: "Empty when ok is false.",
       },
     },
-    required: ["ok"],
+    required: ["ok", "message", "sections"],
+    additionalProperties: false,
   },
 };
 
 const SUBMIT_VERDICT_TOOL = {
   name: "submit_verdict",
   description: "Submit a verdict on a single dish the person is craving.",
+  strict: true,
   input_schema: {
     type: "object",
     properties: {
       ok: { type: "boolean", description: "False if the input isn't a recognisable food/drink item." },
-      message: { type: "string", description: "Only set when ok is false." },
-      dish: DISH_SCHEMA,
+      message: { type: "string", description: "When ok is false: a short message to show the user. Empty string when ok is true." },
+      dish: { anyOf: [DISH_SCHEMA, { type: "null" }], description: "Null when ok is false." },
     },
-    required: ["ok"],
+    required: ["ok", "message", "dish"],
+    additionalProperties: false,
   },
 };
 
@@ -157,8 +180,66 @@ function goalContext(profile) {
   return ctx;
 }
 
-function findToolUse(response, name) {
-  return response.content.find(b => b.type === "tool_use" && b.name === name);
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// Checks the caller is signed in and takes one of today's slots, in a single
+// round trip: PostgREST verifies the JWT, and claim_scan only counts against
+// auth.uid() (supabase/migrations/20261009000001_scan_usage.sql). Fails closed
+// - if the allowance can't be checked, nobody gets a free Claude call.
+async function claimSlot(req, kind) {
+  const token = (req.headers.authorization || "").replace(/^Bearer /i, "");
+  if (!token) throw new HttpError(401, "Sign in to scan a menu.");
+
+  let res;
+  try {
+    res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/claim_scan`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ p_kind: kind }),
+    });
+  } catch (err) {
+    console.error("claim_scan unreachable:", err);
+    throw new HttpError(503, "Something went wrong. Try again.");
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    throw new HttpError(401, "Your session has expired. Sign in again.");
+  }
+  if (!res.ok) {
+    console.error("claim_scan failed:", res.status, await res.text().catch(() => ""));
+    throw new HttpError(503, "Something went wrong. Try again.");
+  }
+
+  const left = await res.json();
+  if (left === null) {
+    throw new HttpError(429, kind === "scan"
+      ? "That's your three scans for today. They reset at midnight."
+      : "That's today's limit for quick checks. It resets at midnight.");
+  }
+  return left;
+}
+
+// tool_choice "auto" doesn't guarantee a call the way forcing it used to (this
+// model rejects forced tool use), so check for one and ask once more if it's
+// missing. strict: true on the tool keeps the arguments schema-valid.
+async function callForTool(params, toolName) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await client.messages.create(params);
+    if (response.stop_reason === "refusal") return null;
+    const toolUse = response.content.find(b => b.type === "tool_use" && b.name === toolName);
+    if (toolUse) return toolUse.input;
+    console.warn(`No ${toolName} call (stop_reason: ${response.stop_reason}), attempt ${attempt + 1}`);
+  }
+  return null;
 }
 
 async function handleScan(req, res) {
@@ -173,6 +254,14 @@ async function handleScan(req, res) {
   if (!image && !menuText && !chainName) {
     return res.status(400).json({ error: "A menu image, menu text, or chain name is required" });
   }
+  if (image && !IMAGE_TYPES.includes(imageType)) {
+    return res.status(400).json({ error: "That image format isn't supported. Try a JPEG or PNG." });
+  }
+  if ((menuText && menuText.length > MAX_MENU_TEXT) || (chainName && chainName.length > MAX_CHAIN_NAME)) {
+    return res.status(400).json({ error: "That menu is too long. Try just the section you're interested in." });
+  }
+
+  await claimSlot(req, "scan");
 
   const userContext = goalContext(profile);
   const courseList = courses.map(id => COURSE_LABELS[id] || id).join(", ");
@@ -191,20 +280,22 @@ async function handleScan(req, res) {
     userContent = `Here's what's on the menu:\n\n${menuText}\n\nMy details:\n${userContext}\n\n${courseInstruction}\n\nWhat should I order?`;
   }
 
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 1600,
+  // max_tokens covers thinking as well as the answer, hence more headroom than
+  // the old 1600.
+  const result = await callForTool({
+    model: MODEL,
+    max_tokens: 8000,
+    output_config: { effort: "low" },
     system: [{ type: "text", text: SCAN_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
     tools: [SUBMIT_PICKS_TOOL],
-    tool_choice: { type: "tool", name: "submit_picks" },
+    tool_choice: { type: "auto" },
     messages: [{ role: "user", content: userContent }],
-  });
+  }, "submit_picks");
 
-  const toolUse = findToolUse(response, "submit_picks");
-  if (!toolUse) {
+  if (!result) {
     return res.status(502).json({ error: "Something went wrong. Try again." });
   }
-  return res.status(200).json(toolUse.input);
+  return res.status(200).json(result);
 }
 
 async function handleCraving(req, res) {
@@ -216,25 +307,30 @@ async function handleCraving(req, res) {
   if (!dish || !dish.trim()) {
     return res.status(400).json({ error: "A dish description is required" });
   }
+  if (dish.length > MAX_DISH) {
+    return res.status(400).json({ error: "Keep it to the name of the dish." });
+  }
+
+  await claimSlot(req, "craving");
 
   const userContext = goalContext(profile);
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-5-20250929",
-    max_tokens: 500,
+  const result = await callForTool({
+    model: MODEL,
+    max_tokens: 3000,
+    output_config: { effort: "low" },
     system: [{ type: "text", text: CRAVING_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
     tools: [SUBMIT_VERDICT_TOOL],
-    tool_choice: { type: "tool", name: "submit_verdict" },
+    tool_choice: { type: "auto" },
     messages: [{
       role: "user",
       content: `I'm craving: ${dish.trim()}\n\nMy details:\n${userContext}\n\nShould I order it?`,
     }],
-  });
+  }, "submit_verdict");
 
-  const toolUse = findToolUse(response, "submit_verdict");
-  if (!toolUse) {
+  if (!result) {
     return res.status(502).json({ error: "Something went wrong. Try again." });
   }
-  return res.status(200).json(toolUse.input);
+  return res.status(200).json(result);
 }
 
 export default async function handler(req, res) {
@@ -248,6 +344,9 @@ export default async function handler(req, res) {
     }
     return await handleScan(req, res);
   } catch (error) {
+    if (error instanceof HttpError) {
+      return res.status(error.status).json({ error: error.message });
+    }
     console.error("API error:", error);
     return res.status(500).json({ error: "Something went wrong. Try again." });
   }
