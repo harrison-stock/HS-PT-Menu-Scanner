@@ -54,7 +54,7 @@
     </div>
     <div class="landing-footer">
       <button class="btn-primary" data-action="go-auth">GET STARTED</button>
-      <div class="built-by">Built by <a href="https://www.harrisonstock.co.uk" target="_blank" rel="noopener">Harrison Stock</a></div>
+      <div class="built-by">Built by <a href="https://www.harrisonstock.co.uk" target="_blank" rel="noopener">Harrison Stock</a> · <a href="privacy.html">Privacy</a></div>
     </div>
   </div>
 
@@ -99,6 +99,13 @@
         </div>
       </div>
     </div>
+    <!-- Marketing consent: unticked, optional, and the app works the same
+         either way. The wording here must match MARKETING_WORDING in app.js. -->
+    <label class="consent-row" id="auth-consent-row" hidden>
+      <input type="checkbox" id="auth-marketing">
+      <span>Email me occasional training and nutrition tips from Harrison Stock, including offers on coaching. Unsubscribe any time.</span>
+    </label>
+    <div class="privacy-line">How we use your details: <a href="privacy.html" target="_blank" rel="noopener">privacy notice</a></div>
     <!-- Turnstile bot check; only shown once a site key is set in app.js -->
     <div class="turnstile-slot" id="turnstile-slot" hidden></div>
     <div class="footer-cta">
@@ -168,6 +175,7 @@
       <div>
         <div class="field-label">DIETARY RESTRICTIONS</div>
         <div class="steps" style="flex-direction:row;flex-wrap:wrap;gap:7px" id="profile-chips" data-target="profile"></div>
+        <div class="special-note" id="profile-chips-note" hidden>Halal tells us about your religion, which the law treats as sensitive. By choosing it you agree to us using it only to tailor your picks. It's sent with each scan to the AI that reads the menu, and you can remove it here any time.</div>
       </div>
     </div>
     <div class="footer-cta">
@@ -350,6 +358,15 @@
       <div>
         <div class="field-label">DIETARY RESTRICTIONS</div>
         <div class="steps" style="flex-direction:row;flex-wrap:wrap;gap:7px" id="settings-chips" data-target="settings"></div>
+        <div class="special-note" id="settings-chips-note" hidden>Halal tells us about your religion, which the law treats as sensitive. By choosing it you agree to us using it only to tailor your picks. It's sent with each scan to the AI that reads the menu, and you can remove it here any time.</div>
+      </div>
+      <div>
+        <div class="field-label">// EMAILS</div>
+        <label class="consent-row">
+          <input type="checkbox" id="settings-marketing" disabled>
+          <span>Email me occasional training and nutrition tips from Harrison Stock, including offers on coaching. Unsubscribe any time.</span>
+        </label>
+        <div class="craving-err" id="settings-marketing-err" hidden></div>
       </div>
       <div>
         <div class="field-label">// APPEARANCE</div>
@@ -372,6 +389,7 @@
     <div class="footer-cta">
       <button class="btn-primary" id="btn-save-settings" data-action="save-settings">SAVE CHANGES</button>
       <button class="link-btn" data-action="sign-out" style="margin-top:16px;text-align:center;width:100%">SIGN OUT</button>
+      <div class="privacy-line" style="text-align:center"><a href="privacy.html" target="_blank" rel="noopener">Privacy notice</a> · To delete your account, email <a href="mailto:harrison@harrisonstock.co.uk">harrison@harrisonstock.co.uk</a></div>
     </div>
   </div>
 

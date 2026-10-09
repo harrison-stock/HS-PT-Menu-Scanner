@@ -153,6 +153,17 @@ textarea { font-size:12px; line-height:1.6; min-height:88px; resize:none; }
 }
 .chip.is-sel { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); box-shadow:0 0 8px var(--accent-glow); }
 
+/* ── Consent and privacy ──────────────────────────────── */
+.consent-row { display:flex; gap:12px; align-items:flex-start; margin-top:18px; cursor:pointer;
+  font-size:13px; line-height:1.5; color:var(--text-2); letter-spacing:0.01em; }
+.consent-row[hidden] { display:none; }
+.consent-row input { flex:none; width:20px; height:20px; margin:1px 0 0; accent-color:var(--accent-2); cursor:pointer; }
+.privacy-line { font-size:11px; color:var(--text-3); letter-spacing:0.04em; margin-top:14px; }
+.privacy-line a { color:var(--accent); }
+.special-note { margin-top:10px; padding:11px 13px; border-radius:12px; border:1px solid var(--line-strong);
+  background:var(--chip-fill); font-size:13px; line-height:1.5; color:var(--text-2); }
+.special-note[hidden] { display:none; }
+
 /* Fixed height so the form doesn't jump when the widget arrives. */
 .turnstile-slot { min-height:65px; margin-top:18px; display:flex; justify-content:center; }
 .turnstile-slot[hidden] { display:none; }

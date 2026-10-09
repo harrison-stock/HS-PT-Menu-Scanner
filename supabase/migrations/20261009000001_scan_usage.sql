@@ -53,6 +53,11 @@ begin
 
   perform pg_advisory_xact_lock(hashtextextended(uid::text || p_kind, 0));
 
+  -- Counts are only needed for today. Clearing everyone's older rows on each
+  -- claim keeps the table to a couple of days of history without a scheduled
+  -- job, which is what the privacy notice promises. Tiny table, cheap delete.
+  delete from public.scan_usage where day < today - 1;
+
   select count(*) into used
   from public.scan_usage
   where user_id = uid and day = today and kind = p_kind;

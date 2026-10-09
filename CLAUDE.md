@@ -93,7 +93,15 @@ Do not add any of these unless explicitly asked.
 
 ## CTA and lead capture
 
-Email is captured at sign-up, before the first scan. The results screen ends with a subtle CTA:
+Email is captured at sign-up, before the first scan. **Marketing emails need consent**, given with an unticked, optional tickbox at sign-up or the toggle in Settings. The app must work exactly the same either way.
+
+- Every change is a row in `marketing_consent_log` (who, when, yes/no, the exact wording shown). The current answer is the latest row. See `supabase/migrations/20261009000002_marketing_consent.sql`.
+- **Only email people in the `marketing_optins` view.** Accounts created before consent existed have no record, which means no.
+- The wording lives in two places that must match: `MARKETING_WORDING` in `app.js` (what gets recorded) and the two tickbox labels in `index.html` (what's shown).
+- Restrictions that reveal religion (`SENSITIVE_RESTRICTIONS`, currently Halal) show a notice when picked: that's the explicit consent UK GDPR needs for special category data. Add to that list if a similar option is added.
+- `public/privacy.html` is the privacy notice. Update it whenever what's collected, who processes it, or how long it's kept changes.
+
+The results screen ends with a subtle CTA:
 
 "Want help building a full nutrition plan? Book a free call with Harrison → harrisonstock.co.uk"
 

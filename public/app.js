@@ -72,6 +72,16 @@ import { supabase } from './supabase-client.js';
   const TURNSTILE_SITE_KEY = '';
   const needCaptcha = !!TURNSTILE_SITE_KEY;
 
+  // ── Consent wording ─────────────────────────────────────────────
+  // Stored with every consent record as proof of what the person agreed to.
+  // Change the words and the new version is what gets recorded from then on;
+  // anyone who agreed to the old words keeps that record.
+  const MARKETING_WORDING = 'Email me occasional training and nutrition tips from Harrison Stock, including offers on coaching. Unsubscribe any time.';
+
+  // Restrictions that reveal something UK GDPR treats as special category
+  // data (religion), so they need explicit consent with the reason shown.
+  const SENSITIVE_RESTRICTIONS = ['Halal'];
+
   // ── State ─────────────────────────────────────────────
   // Profile data now lives in Supabase (see supabase-client.js + the
   // `profiles` table) instead of localStorage — auth session persistence
@@ -95,6 +105,7 @@ import { supabase } from './supabase-client.js';
     authMode: 'signup', authErr: null, resetMsg: null,
     needsPassword: false, setPwErr: null,
     captchaToken: null, authBusy: false,
+    marketing: null, marketingErr: null,
   };
 
   // ── DOM helpers ─────────────────────────────────────────────
@@ -150,6 +161,8 @@ import { supabase } from './supabase-client.js';
     `).join('');
   }
   function renderChips(containerId) {
+    const note = $(containerId + '-note');
+    if (note) note.hidden = !state.restrictions.some(r => SENSITIVE_RESTRICTIONS.includes(r));
     const el = $(containerId);
     el.innerHTML = RESTRICTIONS.map(label => {
       const isNone = label === 'None';
@@ -416,6 +429,7 @@ import { supabase } from './supabase-client.js';
       $('settings-email').textContent = state.email.trim() || '—';
       renderGoalRow('settings-goal-row');
       renderChips('settings-chips');
+      renderMarketingToggle();
       document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('is-sel', b.dataset.theme === state.theme));
       $('btn-save-settings').textContent = state.saved ? 'SAVED' : 'SAVE CHANGES';
     } else if (state.screen === 'auth') {
@@ -480,6 +494,26 @@ import { supabase } from './supabase-client.js';
   const captchaReady = () => !needCaptcha || !!state.captchaToken;
   const CAPTCHA_WAIT = 'One moment, finishing the security check.';
 
+  // Settings: loaded fresh each time the screen opens, since it can only be
+  // read through the RPC.
+  async function loadMarketing() {
+    state.marketing = null; state.marketingErr = null;
+    renderMarketingToggle();
+    const { data, error } = await supabase.rpc('get_marketing_consent');
+    state.marketing = error ? null : !!data;
+    if (error) state.marketingErr = "Couldn't load your email preference.";
+    renderMarketingToggle();
+  }
+
+  function renderMarketingToggle() {
+    const box = $('settings-marketing');
+    box.checked = !!state.marketing;
+    box.disabled = state.marketing === null;
+    const errEl = $('settings-marketing-err');
+    errEl.hidden = !state.marketingErr;
+    errEl.textContent = state.marketingErr || '';
+  }
+
   function renderAuth() {
     mountTurnstile();
     $('auth-submit-btn').disabled = state.authBusy || !captchaReady();
@@ -489,6 +523,7 @@ import { supabase } from './supabase-client.js';
       ? 'Takes 30 seconds. Get your first picks in a minute.'
       : 'Welcome back. Sign in to keep scanning.';
     $('auth-name-field').hidden = !isSignup;
+    $('auth-consent-row').hidden = !isSignup;
     $('auth-forgot-row').hidden = isSignup;
     $('auth-submit-btn').textContent = isSignup ? 'CREATE ACCOUNT' : 'SIGN IN';
     const toggleBtn = document.querySelector('[data-action="auth-toggle-mode"]');
@@ -557,7 +592,7 @@ import { supabase } from './supabase-client.js';
   // ── Action handlers ─────────────────────────────────────────────
   const actions = {
     'go-auth': () => { state.authMode = 'signup'; state.authErr = null; state.resetMsg = null; go('auth'); },
-    'go-settings': () => go('settings'),
+    'go-settings': () => { go('settings'); loadMarketing(); },
     'go-chains': () => go('chains'),
     'back-to-scanner': () => go('scanner'),
     'back-from-settings': () => go('scanner'),
@@ -685,7 +720,13 @@ import { supabase } from './supabase-client.js';
           if (error) state.authErr = error.message;
         } else {
           const name = $('auth-name').value.trim();
-          const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name }, captchaToken } });
+          // Read by a trigger on auth.users, which writes the consent record
+          // (supabase/migrations/20261009000002_marketing_consent.sql).
+          const marketing = $('auth-marketing').checked;
+          const { data, error } = await supabase.auth.signUp({ email, password, options: {
+            data: { name, marketing_consent: marketing, marketing_consent_wording: MARKETING_WORDING },
+            captchaToken,
+          } });
           if (error) state.authErr = error.message;
           else if (data.session) { state.authBusy = false; await handleSessionChange(data.session); return; }
         }
@@ -920,6 +961,17 @@ import { supabase } from './supabase-client.js';
 
   $('input-menu-text').addEventListener('input', (e) => { state.menuText = e.target.value; state.err = null; });
   $('input-cals').addEventListener('input', (e) => { state.cals = e.target.value; });
+  $('settings-marketing').addEventListener('change', async (e) => {
+    const want = e.target.checked;
+    state.marketingErr = null;
+    state.marketing = want; renderMarketingToggle();
+    const { error } = await supabase.rpc('set_marketing_consent', { p_granted: want, p_wording: MARKETING_WORDING });
+    if (error) {
+      state.marketing = !want;
+      state.marketingErr = "Couldn't save that. Try again.";
+    }
+    renderMarketingToggle();
+  });
   $('settings-input-name').addEventListener('input', (e) => { state.name = e.target.value; });
   $('settings-input-cals').addEventListener('input', (e) => { state.cals = e.target.value; });
   $('chain-search').addEventListener('input', (e) => { state.chainQuery = e.target.value; renderChains(); });
