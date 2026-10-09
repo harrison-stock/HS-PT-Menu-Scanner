@@ -462,9 +462,15 @@ import { supabase } from './supabase-client.js';
   }
 
   async function callAnalyse(body) {
+    // getSession refreshes the token if it has expired, so a scan after the
+    // phone has been in a pocket all evening still goes through.
+    const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch('/api/analyse', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + (session ? session.access_token : ''),
+      },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
@@ -702,18 +708,74 @@ import { supabase } from './supabase-client.js';
   }
 
   // ── File handling ─────────────────────────────────────────────
-  $('camera-input').addEventListener('change', (e) => {
+  // Phone cameras produce 3-6MB photos at 4000px+. Sent as-is they break two
+  // limits: Vercel rejects request bodies over 4.5MB, and Claude rejects images
+  // over 5MB - and base64 adds a third on top. 1600px on the long edge is still
+  // plenty to read a menu, and comes out at a few hundred KB as a JPEG.
+  // Same approach as src/lib/imageCompress.js in the HS PT app.
+  const PHOTO_MAX_EDGE = 1600;
+  const PHOTO_QUALITY = 0.85;
+
+  function readAsDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function shrinkPhoto(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = url;
+      });
+      const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext('2d');
+      // White under the image, so a transparent PNG doesn't turn black as a JPEG.
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', PHOTO_QUALITY));
+      if (!blob) throw new Error('encode failed');
+      return { blob, type: 'image/jpeg' };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  $('camera-input').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    state.photoType = file.type;
-    state.photoName = file.name;
     state.hasDoc = false; state.docName = ''; state.chainName = '';
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      state.photoData = ev.target.result.split(',')[1];
+    state.err = null;
+
+    // If the browser can't decode it (HEIC on desktop Chrome, say), fall back
+    // to the original - fine if it's small, and the size check below catches
+    // it if not.
+    let out = { blob: file, type: file.type };
+    try { out = await shrinkPhoto(file); } catch (err) { /* keep the original */ }
+
+    if (out.blob.size > 3 * 1024 * 1024) {
+      state.photoData = null; state.photoType = null; state.photoName = '';
+      state.err = "That photo's too large to send. Try a screenshot of it, or type in a few items instead.";
+      $('camera-input').value = '';
       render();
-    };
-    reader.readAsDataURL(file);
+      return;
+    }
+
+    const dataUrl = await readAsDataUrl(out.blob);
+    state.photoType = out.type;
+    state.photoName = file.name;
+    state.photoData = dataUrl.split(',')[1];
+    render();
   });
 
   $('doc-input').addEventListener('change', (e) => {
